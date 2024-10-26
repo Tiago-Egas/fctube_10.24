@@ -1,0 +1,14 @@
+{
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.indexing": true,
+    "python.analysis.packageIndexDephts": [
+        {
+            "name": ["*"],
+            "includeAllSymbols": true,
+            "maxDepth": 20
+        }
+    ],
+    "python.analysis.extraPaths": [
+        "/Djagno/./venv/lib/python3.13/site-packages"
+    ]
+}
