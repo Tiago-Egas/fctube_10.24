@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-import os
+from os import path, makedirs, listdir
 import shutil
 from django.db import IntegrityError, transaction
 from core.models import Video, VideoMedia
@@ -75,12 +75,12 @@ class VideoService:
             raise VideoMediaNotExistsException('Upload not started.')
     
     def __validate_chunks(self, video_path: str, total_chunks: int) -> bool:
-        if not os.path.exists(video_path):
+        if not path.exists(video_path):
             return False
 
         for i in range(total_chunks):
-            chunk_path = os.path.join(video_path, f'{i}.chunk')
-            if not os.path.exists(chunk_path):
+            chunk_path = path.join(video_path, f'{i}.chunk')
+            if not path.exists(chunk_path):
                 return False
         
         return True
@@ -121,25 +121,25 @@ class VideoChunkUploadException(Exception):
 class Storage:
 
     def storage_chunk(self, directory: str, chunk_index: int, chunk: bytes) -> None:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        if not path.exists(directory):
+            makedirs(directory)
         
-        chunk_path = os.path.join(directory, f'{chunk_index}.chunk')
+        chunk_path = path.join(directory, f'{chunk_index}.chunk')
         
         with open(chunk_path, 'wb') as chunk_file:
             chunk_file.write(chunk)
 
     def move_chunks(self, source_path: str, dest_path: str) -> None:
 
-        if not os.path.exists(dest_path):
-            os.makedirs(dest_path, exist_ok=True)
+        if not path.exists(dest_path):
+            makedirs(dest_path, exist_ok=True)
 
-        for filename in os.listdir(source_path):
-            file_path = os.path.join(source_path, filename)
+        for filename in listdir(source_path):
+            file_path = path.join(source_path, filename)
 
-            if os.path.isfile(file_path):
+            if path.isfile(file_path):
                 try:
-                    shutil.move(file_path, os.path.join(dest_path, filename))
+                    shutil.move(file_path, path.join(dest_path, filename))
                     print(f"Arquivo {source_path}/{filename} movido para {dest_path}.")
                 except Exception as e:
                     print(f"Erro ao mover o arquivo {source_path}/{filename}: {e}")
