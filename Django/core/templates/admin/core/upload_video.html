@@ -1,6 +1,221 @@
 {% extends "admin/base_site.html" %}
-{% load i18n %}
+
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static "admin/css/forms.css" %}">{% endblock %}
+
+{# 
+    Bloco de breadcrumbs para a página de upload de vídeo no painel de administração.
+
+    Estrutura:
+    - Link para a página inicial do admin.
+    - Link para a lista de aplicativos do admin, usando o rótulo do aplicativo atual.
+    - Se o usuário tiver permissão de visualização, exibe um link para a lista de mudanças do modelo atual.
+    - Exibe o nome do modelo atual e um texto traduzido "Upload vídeo".
+    - Exibe o nome original truncado para 18 palavras.
+
+    Variáveis:
+    - opts: Opções do modelo atual.
+    - has_view_permission: Booleano indicando se o usuário tem permissão para visualizar o modelo.
+    - original: Nome original do item sendo editado/trabalhado.
+#}
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+&rsaquo; {% if has_view_permission %}<a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>{% else %}{{ opts.verbose_name_plural|capfirst }}{% endif %}
+&rsaquo; {% blocktranslate with name=opts.verbose_name %}Upload vídeo{% endblocktranslate %}{{ original|truncatewords:"18" }}
+</div>
+{% endblock %}
 
 {% block content %}
-    <h1>Upload</h1>
+<!--
+    Este é um formulário HTML para upload de vídeos, utilizando Django Template Language (DTL).
+
+    - O formulário possui o ID "upload-form" e utiliza o método POST com o tipo de codificação "multipart/form-data" para permitir o upload de arquivos.
+    - Um token CSRF é incluído para proteção contra ataques CSRF.
+    - A primeira linha do formulário exibe o título do vídeo e o status do vídeo, utilizando variáveis de contexto do Django.
+    - A segunda linha do formulário contém um campo de entrada de arquivo para selecionar um vídeo no formato MP4.
+    - A última linha do formulário contém um botão de envio com o valor "Fazer upload" e o ID "btnUploadVideo".
+    - Abaixo do formulário, há uma barra de progresso com o ID "progress-bar" e um elemento interno com o ID "progress" para exibir a porcentagem de upload concluída.
+-->
+<form id="upload-form" method="post" enctype="multipart/form-data">
+    <p id="errornote" class="errornote hidden"></p>
+    {% csrf_token %}
+    <div class="form-row">
+        <strong>Título:</strong> {{ video.title }}
+        <br/>
+        <strong>Status do vídeo:</strong> {{ video.get_video_status_display }}
+        
+    </div>
+    <div class="form-row">
+        <input type="file" name="video" accept="video/mp4"/>
+    </div>
+    <div class="submit-row">
+        <input type="submit" value="Fazer upload" class="default" name="btnUploadVideo" id="btnUploadVideo"/>
+    </div>
+</form>
+
+<div id="progress-bar" style="width: 100%; background: #f3f3f3;">
+    <div id="progress" style="width: 0%; height: 20px; background: #4caf50; text-align: center;">0%</div>
+</div>
+
+<!--
+Este script gerencia o upload de arquivos em chunks (partes) para o servidor, permitindo uploads simultâneos e exibindo o progresso do upload.
+
+Constantes:
+- CHUNK_SIZE: Tamanho de cada chunk (1 MB).
+- MAX_SIMULTANEOUS_UPLOADS: Número máximo de uploads simultâneos (2).
+
+Eventos:
+- Adiciona um listener ao formulário de upload para interceptar o evento de submit e chamar a função handleFormSubmit.
+
+Funções:
+- handleFormSubmit(event): Intercepta o evento de submit do formulário, desabilita o botão de upload, verifica se um arquivo foi selecionado e inicia o upload em chunks.
+- changeSubmitStatus(isDisabled): Habilita ou desabilita o botão de upload e altera o texto do botão.
+- uploadFileInChunks(file): Divide o arquivo em chunks e gerencia o upload de cada chunk.
+- generateChunkPromises(file, totalChunks): Gera uma lista de promessas de upload para cada chunk do arquivo.
+- uploadChunk(formData, onChunkUploaded): Faz o upload de um chunk específico e chama a função de callback onChunkUploaded após o sucesso.
+- runSimultaneousUploads(uploadTasks): Gerencia o upload simultâneo de chunks, limitando o número de uploads ativos.
+- finishUpload(fileName, totalChunks): Envia uma requisição para finalizar o upload após todos os chunks terem sido enviados.
+- updateProgress(uploadedChunks, totalChunks): Atualiza a barra de progresso com base no número de chunks enviados.
+- displayError(message): Exibe uma mensagem de erro na interface do usuário.
+
+Elementos HTML:
+- upload-form: Formulário de upload de arquivos.
+- btnUploadVideo: Botão de upload de vídeo.
+- progress: Elemento que exibe o progresso do upload.
+- errornote: Elemento que exibe mensagens de erro.
+-->
+<script type="text/javascript">
+    const CHUNK_SIZE = 1 * 1024 * 1024; // 1 MB per chunk
+    const MAX_SIMULTANEOUS_UPLOADS = 2; // Number of simultaneous uploads
+
+    document.getElementById('upload-form').addEventListener('submit', handleFormSubmit);
+
+    async function handleFormSubmit(event) {
+        event.preventDefault();
+        changeSubmitStatus(true);
+        const fileInput = event.target.querySelector('input[type="file"]');
+        
+        if (fileInput.files.length === 0) {
+            alert('Selecione um arquivo primeiro!');
+            changeSubmitStatus(false);
+            return;
+        }
+
+        try{
+            const file = fileInput.files[0];
+            await uploadFileInChunks(file);
+        } finally {
+            changeSubmitStatus(false);
+        }
+    }
+
+    function changeSubmitStatus(isDisabled) {
+        const btnUploadVideo = document.getElementById('btnUploadVideo');
+        btnUploadVideo.disabled = isDisabled;
+        btnUploadVideo.value = isDisabled ? 'Enviando...' : 'Fazer upload';
+    }
+
+    async function uploadFileInChunks(file) {
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+        
+        const chunkPromises = generateChunkPromises(file, totalChunks);
+
+        try {
+            await runSimultaneousUploads(chunkPromises);
+            await finishUpload(file.name, totalChunks);
+        } catch (error) {
+            displayError('Não foi possível fazer o upload do arquivo.');
+            console.error(error);
+        }
+    }
+
+    function generateChunkPromises(file, totalChunks) {
+        let uploadedChunks = 0;
+        const chunkPromises = [];
+        for (let currentChunk = 0; currentChunk < totalChunks; currentChunk++) {
+            const start = currentChunk * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+
+            const formData = new FormData();
+            formData.append('csrfmiddlewaretoken', document.querySelector('input[name="csrfmiddlewaretoken"]').value);
+            formData.append('chunk', chunk);
+            formData.append('chunkIndex', currentChunk);
+
+            chunkPromises.push(() => uploadChunk(formData, () => {
+                uploadedChunks++;
+                updateProgress(uploadedChunks, totalChunks);
+            }));
+        }
+        return chunkPromises;
+    }
+
+    async function uploadChunk(formData, onChunkUploaded) {
+        try {
+            const response = await fetch("{% url 'admin:core_video_upload' id=id %}", {
+                method: 'POST',
+                body: formData,
+            });
+
+            if (!response.ok) {
+                const textError = await response.text();
+                throw new Error(`Erro no upload do chunk: ${textError}`);
+            }
+            onChunkUploaded();  // Update progress after success
+        } catch (error) {
+            throw error;
+        }
+    }
+
+    async function runSimultaneousUploads(uploadTasks) {
+        const queue = uploadTasks.slice();  // Copy the list of uploads
+        const activeUploads = [];
+
+        while (queue.length > 0 || activeUploads.length > 0) {
+            while (queue.length > 0 && activeUploads.length < MAX_SIMULTANEOUS_UPLOADS) {
+                const task = queue.shift();
+                const uploadPromise = task().finally(() => {
+                    activeUploads.splice(activeUploads.indexOf(uploadPromise), 1);
+                });
+                activeUploads.push(uploadPromise);
+            }
+            await Promise.race(activeUploads);
+        }
+    }
+
+    async function finishUpload(fileName, totalChunks) {
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', document.querySelector('input[name="csrfmiddlewaretoken"]').value);
+        formData.append('fileName', fileName);
+        formData.append('totalChunks', totalChunks);
+
+        const response = await fetch("{% url 'admin:core_video_upload_finish' id=id %}", {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            const textError = await response.text();
+            throw new Error(`Erro ao finalizar o upload: ${textError}`);
+        }
+
+        window.location.href = "{% url 'admin:core_video_upload' id=id %}";
+    }
+
+    function updateProgress(uploadedChunks, totalChunks) {
+        const progressElement = document.getElementById('progress');
+        const percentage = Math.floor((uploadedChunks / totalChunks) * 100);
+        progressElement.innerText = `${percentage}%`;
+        progressElement.style.width = `${percentage}%`;
+    }
+
+    function displayError(message) {
+        const errorNoteElement = document.getElementById('errornote');
+        errorNoteElement.classList.remove('hidden');
+        errorNoteElement.innerText = message;
+    }
+</script>
 {% endblock %}

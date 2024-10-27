@@ -18,6 +18,31 @@ from core.services import VideoChunkUploadException, VideoMediaInvalidStatusExce
 #     can_delete = False
 
 class VideoAdmin(admin.ModelAdmin):
+    """
+    Classe de administração personalizada para o modelo Video.
+    Atributos:
+        list_display (tuple): Campos a serem exibidos na lista de vídeos.
+        list_filter (tuple): Campos para filtrar a lista de vídeos.
+        search_fields (tuple): Campos para busca na lista de vídeos.
+        prepopulated_fields (dict): Campos que serão preenchidos automaticamente.
+    Métodos:
+        get_readonly_fields(request: HttpRequest, obj: Any | None) -> list[str]:
+            Retorna uma lista de campos somente leitura com base no objeto fornecido.
+        video_status(obj: Video) -> str:
+            Retorna o status do vídeo como uma string.
+        get_urls() -> list:
+            Retorna a lista de URLs personalizadas para a administração de vídeos.
+        save_model(request, obj, form, change):
+            Salva o modelo de vídeo, atribuindo o autor se for um novo objeto.
+        redirect_to_upload(obj: Video):
+            Retorna um link HTML para a página de upload de vídeo.
+        upload_video_view(request, id):
+            Exibe a página de upload de vídeo ou processa o upload de chunks de vídeo.
+        _do_upload_video_chunks(request: HttpRequest, id: int) -> Any:
+            Processa o upload de chunks de vídeo e retorna uma resposta JSON.
+        finish_upload_video_view(request, id):
+            Finaliza o upload de vídeo e retorna uma resposta JSON.
+    """
     list_display = ('title', 'published_at', 'is_published', 'num_likes', 'num_views', 'redirect_to_upload', )
     list_filter = ('is_published', 'published_at')
     search_fields = ('title', 'description')
@@ -60,7 +85,6 @@ class VideoAdmin(admin.ModelAdmin):
     
     @csrf_protect_m
     def upload_video_view(self, request, id):
-
         str_id = str(id)
         
         if request.method == 'POST':
@@ -69,7 +93,7 @@ class VideoAdmin(admin.ModelAdmin):
         try:
             video = create_video_service_factory().find_video(id)
             context = dict(
-                self.admin_site.each_context(request), # Include common variables for rendering the admin template.
+                self.admin_site.each_context(request),
                 opts=self.model._meta,
                 id=id,
                 video=video,

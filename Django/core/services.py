@@ -6,6 +6,29 @@ from core.models import Video, VideoMedia
 
 @dataclass
 class VideoService:
+    """
+    Serviço de Vídeo
+    Esta classe fornece métodos para gerenciar o upload e processamento de vídeos.
+    Atributos:
+        storage (Storage): Instância de armazenamento para gerenciar chunks de vídeo.
+    Métodos:
+        get_chunk_directory(video_id: int) -> str:
+            Retorna o diretório temporário para armazenar os chunks de vídeo.
+        find_video(video_id: int) -> Video:
+            Encontra e retorna um vídeo pelo seu ID.
+        process_upload(video_id: int, chunk_index: int, chunk: bytes) -> None:
+            Processa o upload de um chunk de vídeo. Atualiza o status do vídeo e armazena o chunk.
+        __prepare_video_media(video: Video) -> VideoMedia:
+            Prepara e retorna a instância de VideoMedia associada ao vídeo. Cria uma nova instância se não existir.
+        finalize_upload(video_id: int, total_chunks: int) -> None:
+            Finaliza o upload de um vídeo. Valida os chunks e atualiza o status do vídeo.
+        __validate_chunks(video_path: str, total_chunks: int) -> bool:
+            Valida se todos os chunks de vídeo existem no diretório especificado.
+        upload_chunks_to_external_storage(video_id: int) -> None:
+            Move os chunks de vídeo para um armazenamento externo.
+        register_processed_video_path(video_id: int, video_path: str) -> None:
+            Registra o caminho do vídeo processado e atualiza o status do vídeo.
+    """
 
     storage: 'Storage'
 
@@ -114,9 +137,6 @@ class VideoMediaNotExistsException(Exception):
 
 class VideoChunkUploadException(Exception):
     pass
-
-        
-
 
 class Storage:
 
